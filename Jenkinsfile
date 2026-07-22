@@ -53,16 +53,13 @@ pipeline {
             }
         }
 
-        stage('Deploy to Production (AWS)') {
+       stage('Deploy to Production (AWS)') {
     steps {
-        sshagent(['ubuntu']) { // or whatever your credential ID is
-            // Deploy to EC2 #1
-            sh "scp -o StrictHostKeyChecking=no index.html ubuntu@${PROD_EC2_1}:/tmp/index.html"
-            sh "ssh -o StrictHostKeyChecking=no ubuntu@${PROD_EC2_1} 'sudo mv /tmp/index.html /var/www/html/index.html'"
-
-            // Deploy to EC2 #2 (if applicable)
-            sh "scp -o StrictHostKeyChecking=no index.html ubuntu@${PROD_EC2_2}:/tmp/index.html"
-            sh "ssh -o StrictHostKeyChecking=no ubuntu@${PROD_EC2_2} 'sudo mv /tmp/index.html /var/www/html/index.html'"
+        sshagent(['EC2_SSH_KEY']) { 
+            sh '''
+            scp -o StrictHostKeyChecking=no index.html ubuntu@${PROD_EC2_1}:/tmp/index.html
+            ssh -o StrictHostKeyChecking=no ubuntu@${PROD_EC2_1} 'sudo mv /tmp/index.html /var/www/html/index.html'
+            '''
         }
     }
 }
