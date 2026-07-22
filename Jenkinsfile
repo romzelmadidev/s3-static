@@ -1,53 +1,68 @@
-// GitHub push -> webhook -> Jenkins -> SSH/rsync -> Apache servers (/var/www/html).
-// Uses the SSH Agent plugin + the 'webservers-ssh-key' credential. Put at repo ROOT.
 
 pipeline {
     agent any
 
-    options {
-        timestamps()
-        disableConcurrentBuilds()
-    }
-
     environment {
-        // ---- EDIT THESE ----
-        SERVERS = 'ubuntu@54.163.188.106 ubuntu@44.200.221.77'  // your two web servers
-        DOCROOT = '/var/www/html'                             // Apache default doc root
-        APP_SRC = './'                                        // repo root; 'dist/' if you build
-        // --------------------
+        AZURE_STORAGE_ACCOUNT = 'pocstoreeastus7683'
+        AZURE_FILE_SHARE     = 'webcontent'
+        STAGING_URL          = 'http://poc-staging-zel7683.eastus.azurecontainer.io'
+        EXPECTED_CONTENT     = 'Welcome'
+
+        PROD_EC2_1 = '10.0.1.112'  // Replace with EC2 #1 Private/Public IP
+        PROD_EC2_2 = '10.0.20.148'  // Replace with EC2 #2 Private/Public IP
     }
 
     stages {
-
         stage('Checkout') {
-            steps { checkout scm }
-        }
-
-        stage('Build & Test') {
             steps {
-                // Put real build/test commands here if any, e.g. sh 'npm ci && npm run build'
-                sh 'echo "No build step — deploying repo as-is."'
+                checkout scm
             }
         }
 
-        stage('Deploy') {
+        stage('Deploy to Staging (Azure)') {
             steps {
-                sshagent(credentials: ['webservers-ssh-key']) {
+                withCredentials([string(credentialsId: 'AZURE_STORAGE_KEY', variable: 'STORAGE_KEY')]) {
                     sh '''
-                        set -eu
-                        SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-                        for HOST in ${SERVERS}; do
-                            echo "=== Deploying to ${HOST}:${DOCROOT} ==="
-                            # --rsync-path="sudo rsync" lets rsync write to /var/www/html on the server.
-                            rsync -az --delete -e "ssh ${SSH_OPTS}" --rsync-path="sudo rsync" \
-                                --exclude '.git' --exclude 'Jenkinsfile' \
-                                "${APP_SRC}" "${HOST}:${DOCROOT}/"
-                            ssh ${SSH_OPTS} "${HOST}" "sudo systemctl reload apache2"
-                            echo "=== ${HOST} updated ==="
-                        done
+                        az storage file upload \
+                          --account-name ${AZURE_STORAGE_ACCOUNT} \
+                          --account-key "${STORAGE_KEY}" \
+                          --share-name ${AZURE_FILE_SHARE} \
+                          --source index.html \
+                          --path index.html
+                    '''
+                }
+            }
+        }
+
+        stage('Test Staging') {
+            steps {
+                sh '''
+                    HTTP_STATUS=$(curl -o /tmp/staging_response.txt -s -w "%{http_code}" ${STAGING_URL})
+                    if [ "$HTTP_STATUS" -ne 200 ]; then
+                        echo "ERROR: Staging returned status $HTTP_STATUS"
+                        exit 1
+                    fi
+
+                    if grep -q "${EXPECTED_CONTENT}" /tmp/staging_response.txt; then
+                        echo "SUCCESS: Staging content assertion passed!"
+                    else
+                        echo "ERROR: Expected content '${EXPECTED_CONTENT}' not found!"
+                        exit 1
+                    fi
+                '''
+            }
+        }
+
+        stage('Deploy to Production (AWS)') {
+            steps {
+                sshagent(['EC2_SSH_KEY']) {
+                    sh '''
+                        scp -o StrictHostKeyChecking=no index.html ubuntu@${PROD_EC2_1}:/var/www/html/index.html
+                        scp -o StrictHostKeyChecking=no index.html ubuntu@${PROD_EC2_2}:/var/www/html/index.html
                     '''
                 }
             }
         }
     }
 }
+EOF
