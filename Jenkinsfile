@@ -8,7 +8,7 @@ pipeline {
         STAGING_URL          = 'http://poc-staging-zel7683.eastus.azurecontainer.io'
         EXPECTED_CONTENT     = 'Welcome'
 
-        PROD_EC2_1 = '10.0.1.112'  // Replace with EC2 #1 Private/Public IP
+        PROD_EC2_1 = '10.0.10.112'  // Replace with EC2 #1 Private/Public IP
         PROD_EC2_2 = '10.0.20.148'  // Replace with EC2 #2 Private/Public IP
     }
 
